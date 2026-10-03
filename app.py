@@ -23,11 +23,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Sidebar for Universal Data Ingestion (BYOD)
+# Sidebar for Universal Data Ingestion & Controls (BYOD)
 st.sidebar.title("📁 Workspace Data Hub")
 st.sidebar.markdown("Upload **any** tabular dataset (CSV) to analyze model behavior, data drift, and anomalies in real-time.")
 
 uploaded_file = st.sidebar.file_uploader("Upload Custom Production CSV", type=["csv"])
+
+# Global Anomaly Contamination Control
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🎛️ Pipeline Settings")
+contamination = st.sidebar.slider("Anomaly Contamination Rate", 0.01, 0.20, 0.05, 0.01)
 
 # Fallback to default demo datasets if no file is uploaded
 if uploaded_file is not None:
@@ -60,8 +65,6 @@ with tab1:
     st.subheader("Dynamic Outlier & Anomaly Detection")
     st.markdown("Scanning your active dataset for point-in-time anomalies using dynamic Isolation Forest profiling.")
     
-    contamination = st.slider("Anomaly Contamination Rate", 0.01, 0.20, 0.05, 0.01)
-    
     try:
         scanned_df = UniversalMLOpsEngine.run_dynamic_anomaly_scan(active_df, contamination)
         total_recs = len(scanned_df)
@@ -81,29 +84,36 @@ with tab1:
 # ================= TAB 2: EXPLAINABILITY (SHAP) =================
 with tab2:
     st.subheader("Explainable AI: Feature Attribution Drift")
-    st.markdown("Measures whether your model's core decision logic remains consistent using **Kendall's Tau** correlation.")
+    st.markdown("Measures whether your model's core decision logic remains stable using **Kendall's Tau** correlation (computed on clean, non-anomalous records).")
     
     if st.button("Compute Dynamic SHAP Attribution"):
-        with st.spinner("Training dynamic model and calculating SHAP values..."):
+        with st.spinner("Filtering out anomalies and computing SHAP values..."):
             try:
-                model, X_ref = UniversalMLOpsEngine.train_dynamic_baseline(active_df)
-                mid = len(active_df) // 2
-                ref_half = active_df.iloc[:mid]
-                curr_half = active_df.iloc[mid:]
+                # 1. Isolate clean data by removing anomalies based on current contamination rate
+                scanned_for_clean = UniversalMLOpsEngine.run_dynamic_anomaly_scan(active_df, contamination)
+                clean_df = scanned_for_clean[scanned_for_clean['is_anomaly'] == False].drop(columns=['is_anomaly'])
                 
-                _, X_r = UniversalMLOpsEngine.train_dynamic_baseline(ref_half)
-                _, X_c = UniversalMLOpsEngine.train_dynamic_baseline(curr_half)
-                
-                tau = UniversalMLOpsEngine.compute_dynamic_shap(model, X_r, X_c)
-                
-                s1, s2 = st.columns(2)
-                s1.metric("Kendall's Tau Attribution Score", tau)
-                s2.metric("Logic Stability Status", "STABLE" if tau >= 0.70 else "DRIFT DETECTED")
-                
-                if tau < 0.70:
-                    st.error("⚠️ Feature importance ranking has shifted significantly between dataset splits.")
+                if len(clean_df) < 10:
+                    st.error("⚠️ Contamination rate is too high! Too few clean records remain to compute stable SHAP values. Lower the slider in the sidebar.")
                 else:
-                    st.success("✅ Model decision logic is stable across dataset splits.")
+                    # 2. Split clean data into reference and current halves for attribution drift
+                    mid = len(clean_df) // 2
+                    ref_half = clean_df.iloc[:mid]
+                    curr_half = clean_df.iloc[mid:]
+                    
+                    model, X_r = UniversalMLOpsEngine.train_dynamic_baseline(ref_half)
+                    _, X_c = UniversalMLOpsEngine.train_dynamic_baseline(curr_half)
+                    
+                    tau = UniversalMLOpsEngine.compute_dynamic_shap(model, X_r, X_c)
+                    
+                    s1, s2 = st.columns(2)
+                    s1.metric("Kendall's Tau Attribution Score", tau)
+                    s2.metric("Logic Stability Status", "STABLE" if tau >= 0.70 else "DRIFT DETECTED")
+                    
+                    if tau < 0.70:
+                        st.error("⚠️ Feature importance ranking has shifted significantly between clean dataset splits.")
+                    else:
+                        st.success("✅ Model decision logic is stable across clean dataset splits.")
             except Exception as e:
                 st.error(f"Error computing SHAP attribution: {e}")
     else:
