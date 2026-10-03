@@ -67,37 +67,66 @@ with tab1:
     
     try:
         scanned_df = UniversalMLOpsEngine.run_dynamic_anomaly_scan(active_df, contamination)
-        total_recs = len(scanned_df)
-        anomaly_count = int(scanned_df['is_anomaly'].sum())
+        # Reset index to provide clean Row Numbers for users
+        scanned_df_reset = scanned_df.reset_index().rename(columns={'index': 'Original_Row_Number'})
+        
+        total_recs = len(scanned_df_reset)
+        anomaly_count = int(scanned_df_reset['is_anomaly'].sum())
         
         c1, c2, c3 = st.columns(3)
         c1.metric("Total Records Analyzed", f"{total_recs:,}")
         c2.metric("Anomalies Flagged", f"{anomaly_count:,}", f"{(anomaly_count/total_recs)*100:.1f}% rate", delta_color="inverse")
-        c3.metric("Dataset Health", "WARNING" if anomaly_count > (total_recs * 0.1) else "STABLE")
+        c3.metric("Dataset Health Status", "DEGRADED (High Outliers)" if anomaly_count > (total_recs * 0.1) else "HEALTHY")
         
-        st.markdown("#### Flagged Outlier Records")
-        anomalies_only = scanned_df[scanned_df['is_anomaly']]
-        st.dataframe(anomalies_only, use_container_width=True)
+        st.markdown("### 🚨 Flagged Outlier Records & Audit Export")
+        anomalies_only = scanned_df_reset[scanned_df_reset['is_anomaly']]
+        
+        if not anomalies_only.empty:
+            st.dataframe(anomalies_only, use_container_width=True, hide_index=True)
+            
+            # Downloadable Anomaly Audit Report Button
+            csv_data = anomalies_only.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Flagged Anomalies Audit Report (CSV)",
+                data=csv_data,
+                file_name="argus_anomaly_audit_log.csv",
+                mime="text/csv",
+                help="Export a standalone log containing only the erroneous records with their original row numbers."
+            )
+        else:
+            st.info("No anomalies detected at the current contamination threshold.")
+            
     except Exception as e:
         st.error(f"Error running anomaly scan: {e}")
 
 # ================= TAB 2: EXPLAINABILITY (SHAP) =================
 with tab2:
-    st.subheader("Explainable AI: Feature Attribution & Drift Diagnostics")
+    st.subheader("Explainable AI: Feature Attribution & Deep Drift Diagnostics")
     st.markdown("Tracks whether your model's core decision logic remains consistent using **Kendall's Tau** correlation on clean production records.")
     
     if st.button("Compute Dynamic SHAP Attribution & Diagnose"):
-        with st.spinner("Analyzing SHAP feature attributions and running diagnostics..."):
+        with st.spinner("Isolating clean records, training tree explainers, and generating deep diagnostics..."):
             try:
                 scanned_for_clean = UniversalMLOpsEngine.run_dynamic_anomaly_scan(active_df, contamination)
                 clean_df = scanned_for_clean[scanned_for_clean['is_anomaly'] == False].drop(columns=['is_anomaly'])
                 
+                # Render Diagnostic Telemetry Cards
+                st.markdown("---")
+                st.markdown("### 📊 Diagnostic Telemetry Breakdown")
+                d1, d2, d3, d4 = st.columns(4)
+                d1.metric("Raw Dataset Size", f"{len(active_df):,} rows")
+                d2.metric("Anomalies Filtered Out", f"{len(active_df) - len(clean_df):,} rows")
+                d3.metric("Clean Records Retained", f"{len(clean_df):,} rows")
+                d4.metric("Contamination Threshold", f"{contamination * 100:.1f}%")
+                
                 if len(clean_df) < 15:
-                    st.error("⚠️ **Diagnostic Warning:** Anomaly contamination rate is set too high.")
+                    st.error("⚠️ **Critical Diagnostic Failure: Insufficient Clean Sample Size**")
                     st.markdown("""
-                    * **What is wrong:** Too many records have been filtered out as anomalies, leaving fewer than 15 rows to compute stable feature attribution rankings.
-                    * **How to fix it:** Lower the **Anomaly Contamination Rate** slider in the sidebar back down to `0.05` or `0.08` to retain a healthy sample size.
-                    """)
+                    * **Detailed Root Cause:** Your current **Anomaly Contamination Rate** slider is set too high (`{:.1f}%`), or your source dataset is too small. This caused the platform to strip out too many rows, leaving fewer than 15 clean records. Tree explainers and rank correlation require statistical depth to compute meaningful feature attributions.
+                    * **Actionable Remediation Steps:**
+                      1. **Adjust Sidebar Slider:** Lower the Anomaly Contamination Rate down to `0.05` (5%) or `0.08` in the sidebar.
+                      2. **Re-run Diagnostics:** Click the compute button above again to regenerate valid SHAP rankings.
+                    """.format(contamination * 100))
                 else:
                     mid = len(clean_df) // 2
                     ref_half = clean_df.iloc[:mid]
@@ -108,37 +137,39 @@ with tab2:
                     
                     tau = UniversalMLOpsEngine.compute_dynamic_shap(model, X_r, X_c)
                     
+                    st.markdown("---")
                     s1, s2 = st.columns(2)
                     s1.metric("Kendall's Tau Attribution Score", str(tau))
                     
                     if pd.isna(tau):
-                        s2.metric("Diagnostics", "FAILED (Zero Variance)")
-                        st.error("⚠️ **Diagnostic Warning:** Insufficient feature variance across dataset splits.")
+                        s2.metric("Diagnostic Status", "FAILED (Zero Variance / NaN)")
+                        st.error("⚠️ **Root-Cause Analysis: Mathematical Indeterminacy (NaN)**")
                         st.markdown("""
-                        * **What is wrong:** The split dataset lacks numerical variance or has identical values, causing rank correlation math to yield `NaN`.
-                        * **How to fix it:** Upload a richer dataset with diverse numerical ranges or adjust your data ingestion source.
+                        * **Why this failed:** The split datasets (`ref_half` vs `curr_half`) resulted in identical feature importance orderings with zero statistical variance, or feature values contained flat, unvarying distributions. When rank correlation math divides by zero standard deviation, Python outputs `NaN`.
+                        * **How to fix it:** 
+                          1. Ensure your active dataset has rich, multidimensional numerical variation.
+                          2. Try uploading a diverse production CSV via the sidebar Workspace Data Hub.
                         """)
                     elif tau < 0.70:
-                        s2.metric("Diagnostics", "DRIFT DETECTED ⚠️")
-                        st.error("🚨 **Concept Drift Alert:** Model decision logic has significantly altered between baseline and production splits.")
-                        
-                        st.markdown("### 🔍 Root-Cause Analysis & Remediation Steps")
+                        s2.metric("Diagnostic Status", "DRIFT DETECTED ⚠️️")
+                        st.error("🚨 **Concept Drift Alert: Decision Logic Shifted**")
                         st.markdown(f"""
-                        * **Detected Issue:** Kendall's Tau score of **{tau}** falls below the enterprise stability threshold of `0.70`. This means the features the model relies on to make decisions have fundamentally shuffled.
-                        * **Recommended Actions for Engineers:**
-                          1. **Trigger Model Retraining:** Execute an automated pipeline run using `1_train_baseline.py` to retrain weights on recent production distributions.
-                          2. **Audit Upstream Data:** Check if downstream upstream services changed how data is scaled or collected.
-                          3. **Inspect Feature Distributions:** Use Tab 1 to verify if a sudden influx of edge cases corrupted the feature importance hierarchy.
+                        * **Diagnostic Insight:** The Kendall's Tau score of **{tau}** breaches the enterprise stability floor (`< 0.70`). The underlying feature attribution hierarchy has experienced severe concept drift between baseline and current data splits.
+                        * **Enterprise Remediation Protocol:**
+                          1. **Initiate Model Retraining:** Queue an automated pipeline build to ingest recent production distributions.
+                          2. **Audit Feature Telemetry:** Review Tab 1 to ensure a sudden surge of outliers didn't distort feature scaling.
                         """)
                     else:
-                        s2.metric("Diagnostics", "STABLE ✅")
-                        st.success("✅ **Model Health Normal:** Decision logic remains robust and consistent across dataset splits.")
-                        st.markdown("* **Analysis:** Feature attribution rankings align closely with baseline expectations. No immediate remediation required.")
+                        s2.metric("Diagnostic Status", "STABLE ✅")
+                        st.success("✅ **System Health Optimal: Decision Logic Uncompromised**")
+                        st.markdown("""
+                        * **Diagnostic Insight:** Feature ranking correlation is robust. The model's core decision pathways remain stable and consistent across dataset segments. No immediate intervention required.
+                        """)
             except Exception as e:
-                st.error(f"Error during SHAP diagnostics: {e}")
+                st.error(f"Error during deep SHAP diagnostics execution: {e}")
     else:
         st.info("Click the button above to run deep explainability diagnostics on your active dataset.")
-        
+
 # ================= TAB 3: CHAOS WORKBENCH =================
 with tab3:
     st.subheader("Data Pipeline Chaos Engineering Workbench")
