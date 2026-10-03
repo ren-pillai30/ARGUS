@@ -211,8 +211,9 @@ with tab3:
             m2.metric("Perturbed Column Mean", f"{new_mean:.2f}")
             m3.metric("Distribution Shift (Z-Score)", f"{z_score_shift:.2f}σ", "CRITICAL" if z_score_shift > FAILURE_Z_THRESHOLD else "NORMAL", delta_color="inverse")
             
-            if z_score_shift > FAILURE_Z_THRESHOLD or noise_mult >= 3.5:
-                st.error(f"🚨 **PIPELINE FAILURE DETECTED:** Scaling `{target_col}` by {noise_mult}x induced a severe statistical distribution shift ({z_score_shift:.2f}σ deviation)!")
+            # Purely statistical trigger: fails only if Z-score breaches 2.5σ
+            if z_score_shift > FAILURE_Z_THRESHOLD:
+                st.error(f"🚨 **PIPELINE FAILURE DETECTED:** Scaling `{target_col}` induced a severe statistical distribution shift ({z_score_shift:.2f}σ deviation)!")
                 st.markdown("""
                 * **System Impact:** The feature distribution has drifted past the acceptable enterprise boundary ($> 2.5\sigma$). Downstream model reliability is compromised.
                 * **Automated Circuit Breaker:** Live inference traffic has been automatically throttled, and fallback shadow models have been engaged.
@@ -224,7 +225,7 @@ with tab3:
             st.dataframe(perturbed_df.head(5), use_container_width=True)
     else:
         st.warning("Active dataset must contain numeric columns for chaos injection.")
-
+        
 # ================= TAB 4: HITL TRIAGE QUEUE =================
 with tab4:
     st.subheader("Human-in-the-Loop (HITL) Triage Audit Store")
