@@ -21,7 +21,7 @@ st.markdown("""
     p, label { color: #8B949E !important; }
     hr { border-bottom: 1px solid #21262D; }
     </style>
-""", unsafe_allow_html=True, _allow_unlocked_html=True)
+""", unsafe_allow_html=True)
 
 # Sidebar for Universal Data Ingestion (BYOD)
 st.sidebar.title("📁 Workspace Data Hub")
@@ -87,7 +87,6 @@ with tab2:
         with st.spinner("Training dynamic model and calculating SHAP values..."):
             try:
                 model, X_ref = UniversalMLOpsEngine.train_dynamic_baseline(active_df)
-                # Split active df into reference and current halves for drift comparison
                 mid = len(active_df) // 2
                 ref_half = active_df.iloc[:mid]
                 curr_half = active_df.iloc[mid:]
