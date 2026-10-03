@@ -1,0 +1,9 @@
+{
+    "status": "ALERT",
+    "metrics": {
+        "anomaly_percentage": 19.0,
+        "drifted_features_percentage": 40.0,
+        "drifted_feature_count": 2
+    },
+    "action_required": true
+}
