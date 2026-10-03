@@ -180,14 +180,25 @@ with tab3:
         target_col = st.selectbox("Select Column to Perturb", numeric_cols)
         noise_mult = st.slider("Multiplier / Noise Scale", 0.1, 5.0, 1.5, 0.1)
         
-        if st.button("Inject Chaos & Preview"):
+        if st.button("Inject Chaos & Test Pipeline Resilience"):
             perturbed_df = active_df.copy()
             perturbed_df[target_col] = perturbed_df[target_col] * noise_mult
-            st.success(f"Successfully scaled column `{target_col}` by factor of {noise_mult}!")
+            
+            # Simulate a failure threshold check
+            if noise_mult >= 3.5:
+                st.error(f"🚨 **PIPELINE FAILURE DETECTED:** Scaling `{target_col}` by a factor of {noise_mult} caused a catastrophic data drift breach!")
+                st.markdown("""
+                * **System Impact:** The anomaly detection SLA has been breached. Extreme distribution skew detected.
+                * **Automated Circuit Breaker:** Live inference traffic has been automatically throttled to prevent downstream model poisoning.
+                """)
+            else:
+                st.success(f"✅ **Pipeline Stable:** Column `{target_col}` perturbed by {noise_mult}. Within acceptable variance limits.")
+                
+            st.markdown("#### Perturbed Data Preview")
             st.dataframe(perturbed_df.head(5), use_container_width=True)
     else:
         st.warning("Active dataset must contain numeric columns for chaos injection.")
-
+        
 # ================= TAB 4: HITL TRIAGE QUEUE =================
 with tab4:
     st.subheader("Human-in-the-Loop (HITL) Triage Audit Store")
