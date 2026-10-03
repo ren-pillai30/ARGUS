@@ -173,7 +173,7 @@ with tab2:
 # ================= TAB 3: CHAOS WORKBENCH =================
 with tab3:
     st.subheader("Data Pipeline Chaos Engineering Workbench")
-    st.markdown("Inject artificial Gaussian noise or scale numerical columns to stress-test your monitoring pipelines.")
+    st.markdown("Inject artificial noise or scale numerical columns to stress-test your monitoring pipelines against dynamic statistical thresholds.")
     
     numeric_cols = active_df.select_dtypes(include=['number']).columns.tolist()
     if numeric_cols:
@@ -182,23 +182,45 @@ with tab3:
         
         if st.button("Inject Chaos & Test Pipeline Resilience"):
             perturbed_df = active_df.copy()
-            perturbed_df[target_col] = perturbed_df[target_col] * noise_mult
             
-            # Simulate a failure threshold check
-            if noise_mult >= 3.5:
-                st.error(f"🚨 **PIPELINE FAILURE DETECTED:** Scaling `{target_col}` by a factor of {noise_mult} caused a catastrophic data drift breach!")
+            # Dynamic Statistical Calculation (Z-Score & Variance Check)
+            original_col = active_df[target_col]
+            col_mean = original_col.mean()
+            col_std = original_col.std()
+            
+            perturbed_df[target_col] = original_col * noise_mult
+            new_mean = perturbed_df[target_col].mean()
+            
+            # Calculate shift in standard deviations (Z-score deviation)
+            if col_std > 0:
+                z_score_shift = abs(new_mean - col_mean) / col_std
+            else:
+                z_score_shift = 0.0
+                
+            # Dynamic failure threshold: triggers if distribution shifts > 2.5 standard deviations
+            FAILURE_Z_THRESHOLD = 2.5
+            
+            st.markdown("---")
+            st.markdown("### 📈 Statistical Telemetry Drift Analysis")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Original Column Mean", f"{col_mean:.2f}")
+            m2.metric("Perturbed Column Mean", f"{new_mean:.2f}")
+            m3.metric("Distribution Shift (Z-Score)", f"{z_score_shift:.2f}σ", "CRITICAL" if z_score_shift > FAILURE_Z_THRESHOLD else "NORMAL", delta_color="inverse")
+            
+            if z_score_shift > FAILURE_Z_THRESHOLD or noise_mult >= 3.5:
+                st.error(f"🚨 **PIPELINE FAILURE DETECTED:** Scaling `{target_col}` by {noise_mult}x induced a severe statistical distribution shift ({z_score_shift:.2f}σ deviation)!")
                 st.markdown("""
-                * **System Impact:** The anomaly detection SLA has been breached. Extreme distribution skew detected.
-                * **Automated Circuit Breaker:** Live inference traffic has been automatically throttled to prevent downstream model poisoning.
+                * **System Impact:** The feature distribution has drifted past the acceptable enterprise boundary ($> 2.5\sigma$). Downstream model reliability is compromised.
+                * **Automated Circuit Breaker:** Live inference traffic has been automatically throttled, and fallback shadow models have been engaged.
                 """)
             else:
-                st.success(f"✅ **Pipeline Stable:** Column `{target_col}` perturbed by {noise_mult}. Within acceptable variance limits.")
+                st.success(f"✅ **Pipeline Stable:** Column `{target_col}` scaled by {noise_mult}x. Variance remains within safe statistical control limits ({z_score_shift:.2f}σ).")
                 
             st.markdown("#### Perturbed Data Preview")
             st.dataframe(perturbed_df.head(5), use_container_width=True)
     else:
         st.warning("Active dataset must contain numeric columns for chaos injection.")
-        
+          
 # ================= TAB 4: HITL TRIAGE QUEUE =================
 with tab4:
     st.subheader("Human-in-the-Loop (HITL) Triage Audit Store")
