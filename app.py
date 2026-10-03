@@ -23,32 +23,44 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Sidebar for Universal Data Ingestion & Controls (BYOD)
+# Sidebar for Universal Data Ingestion (BYOD)
 st.sidebar.title("📁 Workspace Data Hub")
-st.sidebar.markdown("Upload **any** tabular dataset (CSV) to analyze model behavior, data drift, and anomalies in real-time.")
+st.sidebar.markdown("Upload **any** tabular dataset (CSV) to initialize autonomous monitoring, drift detection, and anomaly triage.")
 
-uploaded_file = st.sidebar.file_uploader("Upload Custom Production CSV", type=["csv"])
+uploaded_file = st.sidebar.file_uploader("Upload Production CSV Dataset", type=["csv"])
 
 # Global Anomaly Contamination Control
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎛️ Pipeline Settings")
 contamination = st.sidebar.slider("Anomaly Contamination Rate", 0.01, 0.20, 0.05, 0.01)
 
-# Fallback to default demo datasets if no file is uploaded
+# Handle Public Landing State (No Demo Fallback)
 if uploaded_file is not None:
     active_df = pd.read_csv(uploaded_file)
-    st.sidebar.success(f"Loaded custom dataset: {uploaded_file.name} ({len(active_df):,} rows)")
+    st.sidebar.success(f"Successfully loaded: {uploaded_file.name} ({len(active_df):,} rows)")
 else:
-    try:
-        active_df = pd.read_csv('current_data.csv')
-        st.sidebar.info("Using default demo dataset. Upload your own CSV above anytime!")
-    except FileNotFoundError:
-        st.sidebar.error("No dataset found. Please upload a CSV.")
-        st.stop()
+    # Enterprise Onboarding Landing View for Public Visitors
+    st.title("🛡️ ARGUS Universal MLOps Command Center")
+    st.markdown("Autonomous monitoring, explainable feature attribution, shadow canary validation, and multi-industry anomaly triage.")
+    st.divider()
+    
+    st.info("👈 **Get Started:** Please upload your tabular dataset (CSV format) using the sidebar **Workspace Data Hub** to boot up the enterprise engine.")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("### 📊 Telemetry & Anomalies")
+        st.markdown("Dynamic Isolation Forest outlier profiling with customizable sensitivity thresholds and downloadable audit exports.")
+    with col2:
+        st.markdown("### 🧠 Explainable Drift")
+        st.markdown("SHAP tree explainers and Kendall's Tau correlation tracking to detect feature attribution decay and concept drift.")
+    with col3:
+        st.markdown("### 🧪 Chaos Workbench")
+        st.markdown("Statistical Z-score variance stress-testing and automated circuit-breaker simulation for resilient data pipelines.")
+    st.stop()
 
-# Header
+# Header (When dataset is active)
 st.title("🛡️ ARGUS Universal MLOps Command Center")
-st.markdown("Autonomous monitoring, explainable feature attribution, shadow canary validation, and multi-industry anomaly triage.")
+st.markdown(f"Active Workspace: **{uploaded_file.name}** | Autonomous telemetry, explainability, and pipeline resilience monitoring active.")
 st.divider()
 
 # Navigation Tabs
@@ -67,7 +79,6 @@ with tab1:
     
     try:
         scanned_df = UniversalMLOpsEngine.run_dynamic_anomaly_scan(active_df, contamination)
-        # Reset index to provide clean Row Numbers for users
         scanned_df_reset = scanned_df.reset_index().rename(columns={'index': 'Original_Row_Number'})
         
         total_recs = len(scanned_df_reset)
@@ -84,7 +95,6 @@ with tab1:
         if not anomalies_only.empty:
             st.dataframe(anomalies_only, use_container_width=True, hide_index=True)
             
-            # Downloadable Anomaly Audit Report Button
             csv_data = anomalies_only.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="📥 Download Flagged Anomalies Audit Report (CSV)",
@@ -110,7 +120,6 @@ with tab2:
                 scanned_for_clean = UniversalMLOpsEngine.run_dynamic_anomaly_scan(active_df, contamination)
                 clean_df = scanned_for_clean[scanned_for_clean['is_anomaly'] == False].drop(columns=['is_anomaly'])
                 
-                # Render Diagnostic Telemetry Cards
                 st.markdown("---")
                 st.markdown("### 📊 Diagnostic Telemetry Breakdown")
                 d1, d2, d3, d4 = st.columns(4)
@@ -145,13 +154,11 @@ with tab2:
                         s2.metric("Diagnostic Status", "FAILED (Zero Variance / NaN)")
                         st.error("⚠️ **Root-Cause Analysis: Mathematical Indeterminacy (NaN)**")
                         st.markdown("""
-                        * **Why this failed:** The split datasets (`ref_half` vs `curr_half`) resulted in identical feature importance orderings with zero statistical variance, or feature values contained flat, unvarying distributions. When rank correlation math divides by zero standard deviation, Python outputs `NaN`.
-                        * **How to fix it:** 
-                          1. Ensure your active dataset has rich, multidimensional numerical variation.
-                          2. Try uploading a diverse production CSV via the sidebar Workspace Data Hub.
+                        * **Why this failed:** The split datasets resulted in identical feature importance orderings with zero statistical variance, or feature values contained flat, unvarying distributions. When rank correlation math divides by zero standard deviation, Python outputs `NaN`.
+                        * **How to fix it:** Ensure your active dataset has rich, multidimensional numerical variation.
                         """)
                     elif tau < 0.70:
-                        s2.metric("Diagnostic Status", "DRIFT DETECTED ⚠️️")
+                        s2.metric("Diagnostic Status", "DRIFT DETECTED ⚠")
                         st.error("🚨 **Concept Drift Alert: Decision Logic Shifted**")
                         st.markdown(f"""
                         * **Diagnostic Insight:** The Kendall's Tau score of **{tau}** breaches the enterprise stability floor (`< 0.70`). The underlying feature attribution hierarchy has experienced severe concept drift between baseline and current data splits.
@@ -183,7 +190,6 @@ with tab3:
         if st.button("Inject Chaos & Test Pipeline Resilience"):
             perturbed_df = active_df.copy()
             
-            # Dynamic Statistical Calculation (Z-Score & Variance Check)
             original_col = active_df[target_col]
             col_mean = original_col.mean()
             col_std = original_col.std()
@@ -191,13 +197,11 @@ with tab3:
             perturbed_df[target_col] = original_col * noise_mult
             new_mean = perturbed_df[target_col].mean()
             
-            # Calculate shift in standard deviations (Z-score deviation)
             if col_std > 0:
                 z_score_shift = abs(new_mean - col_mean) / col_std
             else:
                 z_score_shift = 0.0
                 
-            # Dynamic failure threshold: triggers if distribution shifts > 2.5 standard deviations
             FAILURE_Z_THRESHOLD = 2.5
             
             st.markdown("---")
@@ -220,7 +224,7 @@ with tab3:
             st.dataframe(perturbed_df.head(5), use_container_width=True)
     else:
         st.warning("Active dataset must contain numeric columns for chaos injection.")
-          
+
 # ================= TAB 4: HITL TRIAGE QUEUE =================
 with tab4:
     st.subheader("Human-in-the-Loop (HITL) Triage Audit Store")
