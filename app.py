@@ -83,20 +83,22 @@ with tab1:
 
 # ================= TAB 2: EXPLAINABILITY (SHAP) =================
 with tab2:
-    st.subheader("Explainable AI: Feature Attribution Drift")
-    st.markdown("Measures whether your model's core decision logic remains stable using **Kendall's Tau** correlation (computed on clean, non-anomalous records).")
+    st.subheader("Explainable AI: Feature Attribution & Drift Diagnostics")
+    st.markdown("Tracks whether your model's core decision logic remains consistent using **Kendall's Tau** correlation on clean production records.")
     
-    if st.button("Compute Dynamic SHAP Attribution"):
-        with st.spinner("Filtering out anomalies and computing SHAP values..."):
+    if st.button("Compute Dynamic SHAP Attribution & Diagnose"):
+        with st.spinner("Analyzing SHAP feature attributions and running diagnostics..."):
             try:
-                # 1. Isolate clean data by removing anomalies based on current contamination rate
                 scanned_for_clean = UniversalMLOpsEngine.run_dynamic_anomaly_scan(active_df, contamination)
                 clean_df = scanned_for_clean[scanned_for_clean['is_anomaly'] == False].drop(columns=['is_anomaly'])
                 
-                if len(clean_df) < 10:
-                    st.error("⚠️ Contamination rate is too high! Too few clean records remain to compute stable SHAP values. Lower the slider in the sidebar.")
+                if len(clean_df) < 15:
+                    st.error("⚠️ **Diagnostic Warning:** Anomaly contamination rate is set too high.")
+                    st.markdown("""
+                    * **What is wrong:** Too many records have been filtered out as anomalies, leaving fewer than 15 rows to compute stable feature attribution rankings.
+                    * **How to fix it:** Lower the **Anomaly Contamination Rate** slider in the sidebar back down to `0.05` or `0.08` to retain a healthy sample size.
+                    """)
                 else:
-                    # 2. Split clean data into reference and current halves for attribution drift
                     mid = len(clean_df) // 2
                     ref_half = clean_df.iloc[:mid]
                     curr_half = clean_df.iloc[mid:]
@@ -107,18 +109,36 @@ with tab2:
                     tau = UniversalMLOpsEngine.compute_dynamic_shap(model, X_r, X_c)
                     
                     s1, s2 = st.columns(2)
-                    s1.metric("Kendall's Tau Attribution Score", tau)
-                    s2.metric("Logic Stability Status", "STABLE" if tau >= 0.70 else "DRIFT DETECTED")
+                    s1.metric("Kendall's Tau Attribution Score", str(tau))
                     
-                    if tau < 0.70:
-                        st.error("⚠️ Feature importance ranking has shifted significantly between clean dataset splits.")
+                    if pd.isna(tau):
+                        s2.metric("Diagnostics", "FAILED (Zero Variance)")
+                        st.error("⚠️ **Diagnostic Warning:** Insufficient feature variance across dataset splits.")
+                        st.markdown("""
+                        * **What is wrong:** The split dataset lacks numerical variance or has identical values, causing rank correlation math to yield `NaN`.
+                        * **How to fix it:** Upload a richer dataset with diverse numerical ranges or adjust your data ingestion source.
+                        """)
+                    elif tau < 0.70:
+                        s2.metric("Diagnostics", "DRIFT DETECTED ⚠️")
+                        st.error("🚨 **Concept Drift Alert:** Model decision logic has significantly altered between baseline and production splits.")
+                        
+                        st.markdown("### 🔍 Root-Cause Analysis & Remediation Steps")
+                        st.markdown(f"""
+                        * **Detected Issue:** Kendall's Tau score of **{tau}** falls below the enterprise stability threshold of `0.70`. This means the features the model relies on to make decisions have fundamentally shuffled.
+                        * **Recommended Actions for Engineers:**
+                          1. **Trigger Model Retraining:** Execute an automated pipeline run using `1_train_baseline.py` to retrain weights on recent production distributions.
+                          2. **Audit Upstream Data:** Check if downstream upstream services changed how data is scaled or collected.
+                          3. **Inspect Feature Distributions:** Use Tab 1 to verify if a sudden influx of edge cases corrupted the feature importance hierarchy.
+                        """)
                     else:
-                        st.success("✅ Model decision logic is stable across clean dataset splits.")
+                        s2.metric("Diagnostics", "STABLE ✅")
+                        st.success("✅ **Model Health Normal:** Decision logic remains robust and consistent across dataset splits.")
+                        st.markdown("* **Analysis:** Feature attribution rankings align closely with baseline expectations. No immediate remediation required.")
             except Exception as e:
-                st.error(f"Error computing SHAP attribution: {e}")
+                st.error(f"Error during SHAP diagnostics: {e}")
     else:
-        st.info("Click the button above to run explainability analysis on your active dataset.")
-
+        st.info("Click the button above to run deep explainability diagnostics on your active dataset.")
+        
 # ================= TAB 3: CHAOS WORKBENCH =================
 with tab3:
     st.subheader("Data Pipeline Chaos Engineering Workbench")
