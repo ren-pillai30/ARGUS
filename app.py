@@ -4,6 +4,7 @@ import streamlit.components.v1 as components
 import pandas as pd
 import sqlite3
 import joblib
+from sklearn.ensemble import IsolationForest
 from chaos_engine import ChaosEngine, SystemTelemetryProfiler
 from explainability import ExplainableDriftEngine
 from shadow_evaluator import ShadowModelEvaluator
@@ -27,16 +28,17 @@ st.markdown("""
 
 # Header
 st.title("🛡️ ARGUS Enterprise MLOps Command Center")
-st.markdown("Autonomous monitoring, explainable attribution drift, shadow canary routing, and active-learning human-in-the-loop triage.")
+st.markdown("Autonomous monitoring, explainable attribution drift, shadow canary routing, active-learning triage, and live model scoring.")
 st.divider()
 
-# Navigation Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+# Navigation Tabs (Expanded with Live Inference Portal)
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Telemetry & Drift", 
     "🧠 Explainability (SHAP)", 
     "🚦 Shadow Canary CI/CD", 
     "🧪 Chaos Workbench", 
-    "👥 HITL Triage Queue"
+    "👥 HITL Triage Queue",
+    "⚡ Live Inference Portal"
 ])
 
 # ================= TAB 1: TELEMETRY & DRIFT =================
@@ -125,7 +127,6 @@ with tab4:
     if st.button("Simulate Chaos Injection & Profile System"):
         ref_df = pd.read_csv('reference_data.csv')
         
-        # Define wrapper for profiling
         def run_chaos(df):
             df_shifted = ChaosEngine.apply_income_shift(df, multiplier)
             return ChaosEngine.apply_credit_noise(df_shifted, noise_scale)
@@ -167,3 +168,71 @@ with tab5:
             st.rerun()
     else:
         st.info("Triage queue is empty. Click sync above to load flagged anomalies.")
+
+# ================= TAB 6: LIVE INFERENCE PORTAL =================
+with tab6:
+    st.subheader("⚡ Live Customer Scoring & Real-Time Gating")
+    st.markdown("Use this active workspace to evaluate incoming loan applications in real-time. The system automatically screens for point-in-time anomalies and logs outliers.")
+
+    col_input, col_result = st.columns(2)
+
+    with col_input:
+        st.markdown("#### Enter Applicant Details")
+        live_income = st.number_input("Annual Income ($)", min_value=1000.0, max_value=500000.0, value=65000.0, step=1000.0)
+        live_age = st.number_input("Age", min_value=18, max_value=100, value=32, step=1)
+        live_credit = st.number_input("Credit Score", min_value=300.0, max_value=850.0, value=710.0, step=10.0)
+        live_debt = st.number_input("Debt Ratio", min_value=0.0, max_value=1.0, value=0.35, step=0.01)
+        live_employed = st.number_input("Years Employed", min_value=0.0, max_value=40.0, value=5.0, step=0.5)
+
+        evaluate_btn = st.button("Evaluate Application & Screen Safety")
+
+    with col_result:
+        st.markdown("#### Real-Time Decision & Telemetry")
+        if evaluate_btn:
+            try:
+                model = joblib.load('baseline_model.pkl')
+                
+                input_df = pd.DataFrame([{
+                    'Income': live_income,
+                    'Age': live_age,
+                    'Credit_Score': live_credit,
+                    'Debt_Ratio': live_debt,
+                    'Years_Employed': live_employed
+                }])
+
+                pred_proba = model.predict_proba(input_df)[0][1]
+                decision = "APPROVE LOAN" if pred_proba >= 0.5 else "REJECT LOAN"
+
+                ref_df = pd.read_csv('reference_data.csv').drop(columns=['target'], errors='ignore')
+                iso_forest = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
+                iso_forest.fit(ref_df)
+                
+                is_anomaly_pred = iso_forest.predict(input_df)[0]
+                is_anomaly = True if is_anomaly_pred == -1 else False
+
+                if decision == "APPROVE LOAN":
+                    st.success(f"### Decision: {decision}")
+                else:
+                    st.error(f"### Decision: {decision}")
+                
+                st.metric("Approval Probability", f"{pred_proba * 100:.1f}%")
+
+                if is_anomaly:
+                    st.warning("⚠️ **Safety Alert:** Isolation Forest flagged this profile as an extreme anomaly/outlier!")
+                    init_triage_db()
+                    conn = sqlite3.connect("triage_audit.db")
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT INTO anomaly_triage (timestamp, income, age, credit_score, debt_ratio, years_employed, status, reviewer_notes)
+                        VALUES (datetime('now'), ?, ?, ?, ?, ?, 'PENDING', 'Auto-flagged from Live Inference Portal')
+                    ''', (live_income, live_age, live_credit, live_debt, live_employed))
+                    conn.commit()
+                    conn.close()
+                    st.info("📥 Automatically routed to HITL Triage Queue for compliance review.")
+                else:
+                    st.success("✅ **Safety Check Passed:** Profile conforms to baseline distribution.")
+
+            except Exception as e:
+                st.error(f"Inference execution error: {e}")
+        else:
+            st.info("Adjust applicant parameters on the left and click **Evaluate Application** to run live inference.")
